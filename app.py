@@ -98,7 +98,7 @@ def id_from_name(df: pd.DataFrame, chosen: str) -> int | None:
         return None
     nc = name_col(df)
     rows = df.loc[df[nc] == chosen, "id"]
-    return int(rows.iloc[0]) if not rows.empty else None
+    return rows.iloc[0] if not rows.empty else None
 
 # ── Cache de dados ────────────────────────────────────────────────────────────
 @st.cache_data(ttl=30)
