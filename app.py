@@ -20,9 +20,12 @@ st.set_page_config(
 )
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
-@st.cache_resource
 def get_supabase() -> Client:
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+    raw_url = st.secrets["SUPABASE_URL"]
+    # Garante que a URL seja só o host, sem /rest/v1/ ou barras extras
+    url = raw_url.split("/rest/")[0].split("/auth/")[0].rstrip("/")
+    key = st.secrets["SUPABASE_ANON_KEY"]
+    return create_client(url, key)
 
 supabase = get_supabase()
 
