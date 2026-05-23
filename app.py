@@ -355,29 +355,43 @@ elif page == "🗂️ Cadastros":
     def render_crud(tab, table_name: str, df: pd.DataFrame, label: str):
         with tab:
             nc = name_col(df) if not df.empty else "name"
-            # Detecta colunas extras além das padrão
             skip = {"id", "name", "nome", "created_at", "updated_at", nc}
             extra_cols = [c for c in df.columns if c not in skip] if not df.empty else []
+            int_cols = {ec for ec in extra_cols
+                        if not df.empty and pd.api.types.is_numeric_dtype(df[ec])}
 
             st.subheader(f"Adicionar {label}")
             with st.form(f"add_{table_name}", clear_on_submit=True):
                 nm = st.text_input("Nome")
                 extra_vals = {}
                 for ec in extra_cols:
-                    if ec == "type":
+                    if ec in int_cols:
+                        v = st.number_input(f"{ec} (número, 0 = não informado)",
+                                            min_value=0, step=1, value=0)
+                        extra_vals[ec] = int(v) if v > 0 else None
+                    elif ec == "kind":
                         extra_vals[ec] = st.selectbox(
-                            "Tipo (obrigatório pela tabela)",
-                            ["expense", "income"],
-                            format_func=lambda x: "Despesa" if x == "expense" else "Receita"
+                            "Tipo de conta",
+                            ["corrente", "poupanca", "cartao_credito", "cartao_debito", "outro"],
+                            format_func=lambda x: {
+                                "corrente": "Conta Corrente",
+                                "poupanca": "Poupança",
+                                "cartao_credito": "Cartão de Crédito",
+                                "cartao_debito": "Cartão de Débito",
+                                "outro": "Outro",
+                            }.get(x, x)
                         )
                     else:
-                        extra_vals[ec] = st.text_input(f"Campo extra: {ec}")
+                        v = st.text_input(f"{ec}")
+                        extra_vals[ec] = v.strip() if v.strip() else None
                 if st.form_submit_button("➕ Adicionar"):
                     if not nm.strip():
                         st.error("Informe um nome.")
                     else:
                         try:
-                            payload = {nc: nm.strip(), **extra_vals}
+                            payload = {k: v for k, v in
+                                       {nc: nm.strip(), **extra_vals}.items()
+                                       if v is not None}
                             supabase.table(table_name).insert(payload).execute()
                             st.success(f"'{nm}' adicionado.")
                             refresh()
