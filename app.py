@@ -355,15 +355,30 @@ elif page == "🗂️ Cadastros":
     def render_crud(tab, table_name: str, df: pd.DataFrame, label: str):
         with tab:
             nc = name_col(df) if not df.empty else "name"
+            # Detecta colunas extras além das padrão
+            skip = {"id", "name", "nome", "created_at", "updated_at", nc}
+            extra_cols = [c for c in df.columns if c not in skip] if not df.empty else []
+
             st.subheader(f"Adicionar {label}")
             with st.form(f"add_{table_name}", clear_on_submit=True):
                 nm = st.text_input("Nome")
+                extra_vals = {}
+                for ec in extra_cols:
+                    if ec == "type":
+                        extra_vals[ec] = st.selectbox(
+                            "Tipo (obrigatório pela tabela)",
+                            ["expense", "income"],
+                            format_func=lambda x: "Despesa" if x == "expense" else "Receita"
+                        )
+                    else:
+                        extra_vals[ec] = st.text_input(f"Campo extra: {ec}")
                 if st.form_submit_button("➕ Adicionar"):
                     if not nm.strip():
                         st.error("Informe um nome.")
                     else:
                         try:
-                            supabase.table(table_name).insert({nc: nm.strip()}).execute()
+                            payload = {nc: nm.strip(), **extra_vals}
+                            supabase.table(table_name).insert(payload).execute()
                             st.success(f"'{nm}' adicionado.")
                             refresh()
                         except Exception as e:
