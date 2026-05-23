@@ -404,7 +404,7 @@ elif page == "🗂️ Cadastros":
         st.subheader("Adicionar Categoria")
         with st.form("add_categories", clear_on_submit=True):
             nm   = st.text_input("Nome")
-            tipo = st.selectbox("Tipo", ["expense", "income"], format_func=lambda x: "Despesa" if x == "expense" else "Receita")
+            tipo = st.selectbox("Tipo", ["fixa", "variavel", "parcelada", "cartao", "outro"], format_func=lambda x: {"fixa":"Fixa","variavel":"Variável","parcelada":"Parcelada","cartao":"Cartão","outro":"Outro"}[x])
             if st.form_submit_button("\u2795 Adicionar"):
                 if not nm.strip():
                     st.error("Informe um nome.")
