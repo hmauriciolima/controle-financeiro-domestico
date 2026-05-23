@@ -30,11 +30,11 @@ def get_supabase() -> Client:
 supabase = get_supabase()
 
 # ── Nomes das tabelas (ajuste aqui se necessário) ─────────────────────────────
-TB_DESPESAS   = "despesas"
-TB_CATEGORIAS = "categorias"
-TB_CONTAS     = "contas"
+TB_DESPESAS   = "expenses"
+TB_CATEGORIAS = "categories"
+TB_CONTAS     = "accounts"
 TB_PAGAMENTOS = "payment_methods"
-TB_PARCELAS   = "edições"
+TB_PARCELAS   = "installments"
 
 # ── Mapeamento de colunas (PT → padrão interno) ───────────────────────────────
 # Cada lista contém possíveis nomes que o Perplexity pode ter usado.
