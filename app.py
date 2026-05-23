@@ -399,7 +399,36 @@ elif page == "🗂️ Cadastros":
                         except Exception as e:
                             st.error(f"Erro: {e}")
 
-    render_crud(tab1, TB_CATEGORIAS, df_cats, "Categoria")
+    # CATEGORIAS — tem coluna type NOT NULL (hardcoded)
+    with tab1:
+        st.subheader("Adicionar Categoria")
+        with st.form("add_categories", clear_on_submit=True):
+            nm   = st.text_input("Nome")
+            tipo = st.selectbox("Tipo", ["expense", "income"], format_func=lambda x: "Despesa" if x == "expense" else "Receita")
+            if st.form_submit_button("\u2795 Adicionar"):
+                if not nm.strip():
+                    st.error("Informe um nome.")
+                else:
+                    try:
+                        supabase.table(TB_CATEGORIAS).insert({"name": nm.strip(), "type": tipo}).execute()
+                        st.success(f"'{nm}' adicionada.")
+                        refresh()
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+        st.subheader("Categorias cadastradas")
+        if df_cats.empty:
+            st.info("Nenhuma cadastrada.")
+        else:
+            st.dataframe(df_cats, use_container_width=True)
+            with st.form("del_categories"):
+                del_id = st.number_input("ID para excluir", min_value=1, step=1)
+                if st.form_submit_button("\U0001f5d1\ufe0f Excluir"):
+                    try:
+                        supabase.table(TB_CATEGORIAS).delete().eq("id", str(del_id)).execute()
+                        st.success("Exclu\u00eddo.")
+                        refresh()
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
     render_crud(tab2, TB_PAGAMENTOS, df_pays, "Forma de pagamento")
     render_crud(tab3, TB_CONTAS,     df_accs, "Conta / Cartão")
 
