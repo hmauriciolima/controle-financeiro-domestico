@@ -431,117 +431,215 @@ elif page == "➕ Despesa simples":
 # ════════════════════════════════════════════════════════════════════
 elif page == "💳 Despesa parcelada":
     st.title("💳 Despesa parcelada")
-    st.caption("O sistema divide o valor e gera todas as parcelas automaticamente.")
 
     cat_opts = df_cats[name_col(df_cats)].tolist() if not df_cats.empty else []
     pay_opts = df_pays[name_col(df_pays)].tolist() if not df_pays.empty else []
     acc_opts = df_accs[name_col(df_accs)].tolist() if not df_accs.empty else []
 
-    with st.form("expense_parcel", clear_on_submit=True):
-        r1, r2 = st.columns([3, 1])
-        description   = r1.text_input("Descrição *  (ex: Tratamento Dentário)")
-        purchase_date = r2.date_input("Data da compra *",    value=date.today(),
-                                       help="Quando você comprou / contratou")
+    tab_novo, tab_resumo, tab_detalhe = st.tabs(["➕ Nova parcelada", "📊 Resumo por mês", "📋 Detalhes"])
 
-        r3, r4, r5 = st.columns(3)
-        category_name = r3.selectbox("Categoria",          cat_opts or ["Sem cadastro"])
-        payment_name  = r4.selectbox("Forma de pagamento", pay_opts or ["Sem cadastro"])
-        account_name  = r5.selectbox("Cartão / Conta usado", acc_opts or ["Sem cadastro"])
+    # ── ABA: NOVA PARCELADA
+    with tab_novo:
+        with st.form("expense_parcel", clear_on_submit=True):
+            r1, r2 = st.columns([3, 1])
+            description   = r1.text_input("Descrição *  (ex: Tratamento Dentário)")
+            purchase_date = r2.date_input("Data da compra", value=date.today(),
+                                          help="Quando comprou / contratou")
 
-        r6, r7, r8 = st.columns(3)
-        total_value = r6.number_input("Valor TOTAL da compra (R$) *", min_value=0.01, step=10.0, format="%.2f")
-        num_inst    = r7.number_input("Nº de parcelas *", min_value=2, max_value=60, value=2, step=1)
-        first_due   = r8.date_input("Vencimento 1ª parcela *", value=date.today(),
-                                     help="Quando cai a primeira parcela")
-        notes = st.text_input("Observações")
+            r3, r4, r5 = st.columns(3)
+            category_name = r3.selectbox("Categoria",            cat_opts or ["Sem cadastro"])
+            payment_name  = r4.selectbox("Forma de pagamento",   pay_opts or ["Sem cadastro"])
+            account_name  = r5.selectbox("Cartão / Conta usado", acc_opts or ["Sem cadastro"])
 
-        # Preview ao vivo
-        if total_value > 0 and num_inst > 0:
-            inst_val = total_value / num_inst
-            st.info(f"📐 Cada parcela: **{money(inst_val)}** × {int(num_inst)}  =  {money(total_value)}")
+            r6, r7, r8 = st.columns(3)
+            total_value = r6.number_input("Valor TOTAL (R$) *", min_value=0.01, step=10.0, format="%.2f")
+            num_inst    = r7.number_input("Nº de parcelas *",   min_value=2, max_value=60, value=2, step=1)
+            first_due   = r8.date_input("Vencimento 1ª parcela", value=date.today(),
+                                        help="Quando cai a primeira parcela")
+            notes = st.text_input("Observações")
 
-        submitted = st.form_submit_button("💾 Salvar e gerar parcelas", use_container_width=True)
+            if total_value > 0 and num_inst > 0:
+                inst_val = total_value / num_inst
+                st.info(f"📐 {int(num_inst)}x de **{money(inst_val)}** = {money(total_value)}")
 
-    if submitted:
-        if not description.strip():
-            st.error("Informe a descrição.")
-        else:
-            inst_val = round(float(total_value) / num_inst, 2)
-            payload = {
-                "expense_date":      purchase_date.isoformat(),
-                "description":       description.strip(),
-                "expense_type":      "Parcelada",
-                "total_value":       float(total_value),
-                "category_id":       id_from_name(df_cats, category_name),
-                "payment_method_id": id_from_name(df_pays, payment_name),
-                "account_id":        id_from_name(df_accs, account_name),
-                "notes":             notes.strip(),
-            }
-            payload = {k: v for k, v in payload.items() if v is not None and v != ""}
-            try:
-                res = supabase.table(TB_DESPESAS).insert(payload).execute()
-                if res.data:
-                    expense_id = res.data[0]["id"]
-                    parcelas = []
-                    for i in range(int(num_inst)):
-                        due = first_due + relativedelta(months=i)
-                        parcelas.append({
-                            "expense_id":         expense_id,
-                            "installment_number": i + 1,
-                            "total_installments": int(num_inst),
-                            "due_month":          due.replace(day=1).isoformat(),
-                            "installment_value":  inst_val,
-                            "paid":               False,
-                        })
-                    try:
-                        supabase.table(TB_PARCELAS).insert(parcelas).execute()
-                        st.success(f"✅ {int(num_inst)} parcelas de {money(inst_val)} geradas!")
-                    except Exception as ep:
-                        st.warning(f"Despesa salva, mas erro nas parcelas: {ep}")
-                    refresh()
-                else:
-                    st.error("Não foi possível salvar.")
-            except Exception as e:
-                st.error(f"Erro: {e}")
+            submitted = st.form_submit_button("💾 Salvar e gerar parcelas", use_container_width=True)
 
-    # Tabela de parcelas em aberto
-    st.divider()
-    st.subheader("📋 Parcelas em aberto")
-    if not df_inst.empty:
-        c_due  = fc(df_inst, "due_month", "vencimento", "due_date")
-        c_ival = fc(df_inst, "installment_value", "valor_parcela", "value")
-        c_paid = fc(df_inst, "paid", "pago")
-        if c_due and c_ival and c_paid:
-            df_inst[c_due]  = pd.to_datetime(df_inst[c_due])
-            df_inst[c_ival] = df_inst[c_ival].astype(float)
-            df_inst["_ml"]  = df_inst[c_due].dt.strftime("%Y-%m")
-            pending = df_inst[df_inst[c_paid] == False].copy()
-
-            k1, k2 = st.columns(2)
-            k1.metric("Parcelas em aberto", len(pending))
-            k2.metric("Total em aberto",    money(pending[c_ival].sum()))
-
-            if not pending.empty:
-                fig = px.bar(
-                    pending.groupby("_ml", as_index=False)[c_ival].sum().sort_values("_ml"),
-                    x="_ml", y=c_ival, title="Por mês de vencimento",
-                    labels={"_ml":"Mês", c_ival:"R$"},
-                    color_discrete_sequence=["#EF553B"])
-                st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(pending.sort_values(c_due), use_container_width=True)
-
-                with st.form("mark_paid"):
-                    inst_id = st.text_input("ID da parcela para marcar como paga")
-                    if st.form_submit_button("✅ Marcar paga"):
+        if submitted:
+            if not description.strip():
+                st.error("Informe a descrição.")
+            else:
+                inst_val = round(float(total_value) / num_inst, 2)
+                payload = {
+                    "expense_date":      purchase_date.isoformat(),
+                    "description":       description.strip(),
+                    "expense_type":      "Parcelada",
+                    "total_value":       float(total_value),
+                    "category_id":       id_from_name(df_cats, category_name),
+                    "payment_method_id": id_from_name(df_pays, payment_name),
+                    "account_id":        id_from_name(df_accs, account_name),
+                    "notes":             notes.strip(),
+                }
+                payload = {k: v for k, v in payload.items() if v is not None and v != ""}
+                try:
+                    res = supabase.table(TB_DESPESAS).insert(payload).execute()
+                    if res.data:
+                        expense_id = res.data[0]["id"]
+                        parcelas = []
+                        for i in range(int(num_inst)):
+                            due = first_due + relativedelta(months=i)
+                            parcelas.append({
+                                "expense_id":         expense_id,
+                                "installment_number": i + 1,
+                                "total_installments": int(num_inst),
+                                "due_month":          due.replace(day=1).isoformat(),
+                                "installment_value":  inst_val,
+                                "paid":               False,
+                            })
                         try:
-                            supabase.table(TB_PARCELAS).update({c_paid: True}).eq("id", inst_id.strip()).execute()
-                            st.success("Marcada como paga.")
-                            refresh()
-                        except Exception as e:
-                            st.error(f"Erro: {e}")
-    else:
-        st.info("Nenhuma parcela cadastrada.")
+                            supabase.table(TB_PARCELAS).insert(parcelas).execute()
+                            st.success(f"✅ {int(num_inst)}x de {money(inst_val)} geradas!")
+                        except Exception as ep:
+                            st.warning(f"Despesa salva, mas erro nas parcelas: {ep}")
+                        refresh()
+                    else:
+                        st.error("Não foi possível salvar.")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
 
+    # Preparar dados de parcelas para as outras abas
+    c_due  = fc(df_inst, "due_month",          "vencimento", "due_date")
+    c_ival = fc(df_inst, "installment_value",   "valor_parcela", "value")
+    c_paid = fc(df_inst, "paid",                "pago")
+    c_eid  = fc(df_inst, "expense_id",          "despesa_id")
+    c_inum = fc(df_inst, "installment_number",  "numero_parcela")
+    c_itot = fc(df_inst, "total_installments",  "total_parcelas")
+
+    MESES_PT = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",
+                7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"}
+
+    has_inst = not df_inst.empty and c_due and c_ival and c_paid
+
+    if has_inst:
+        df_inst[c_due]  = pd.to_datetime(df_inst[c_due])
+        df_inst[c_ival] = df_inst[c_ival].astype(float)
+        df_inst["_ano"] = df_inst[c_due].dt.year
+        df_inst["_mes"] = df_inst[c_due].dt.month
+        df_inst["_ym"]  = df_inst[c_due].dt.to_period("M").astype(str)
+        df_inst["_mes_label"] = df_inst.apply(
+            lambda r: f"{MESES_PT[r['_mes']]} {r['_ano']}", axis=1)
+
+        # Juntar com expenses para pegar descrição
+        c_exp_desc = fc(df_exp, "description", "descricao", "nome")
+        if c_eid and c_exp_desc and not df_exp.empty:
+            desc_map = df_exp.set_index("id")[c_exp_desc].to_dict()
+            df_inst["_descricao"] = df_inst[c_eid].map(desc_map).fillna("—")
+        else:
+            df_inst["_descricao"] = "—"
+
+    # ── ABA: RESUMO POR MÊS
+    with tab_resumo:
+        if not has_inst:
+            st.info("Nenhuma parcela cadastrada ainda.")
+        else:
+            st.subheader("Resumo mensal de parcelas")
+
+            # Totais globais
+            total_pago   = df_inst[df_inst[c_paid] == True][c_ival].sum()
+            total_aberto = df_inst[df_inst[c_paid] == False][c_ival].sum()
+            k1, k2, k3 = st.columns(3)
+            k1.metric("✅ Total já pago",     money(total_pago))
+            k2.metric("⏳ Total em aberto",   money(total_aberto))
+            k3.metric("📦 Total comprometido",money(total_pago + total_aberto))
+
+            st.divider()
+
+            # Tabela por mês — pago x em aberto
+            resumo = df_inst.groupby(["_mes_label","_ym",c_paid])[c_ival].sum().reset_index()
+            resumo.columns = ["Mês","_ym","Pago","Valor"]
+            pivot = resumo.pivot_table(index=["Mês","_ym"], columns="Pago",
+                                       values="Valor", aggfunc="sum").reset_index()
+            pivot.columns.name = None
+            pivot = pivot.rename(columns={False:"Em aberto (R$)", True:"Pago (R$)"})
+            pivot = pivot.sort_values("_ym")
+            for col_r in ["Em aberto (R$)","Pago (R$)"]:
+                if col_r not in pivot.columns:
+                    pivot[col_r] = 0.0
+            pivot["Em aberto (R$)"] = pivot["Em aberto (R$)"].fillna(0)
+            pivot["Pago (R$)"]      = pivot["Pago (R$)"].fillna(0)
+            pivot["Total mês"]      = pivot["Em aberto (R$)"] + pivot["Pago (R$)"]
+            pivot_show = pivot[["Mês","Pago (R$)","Em aberto (R$)","Total mês"]].copy()
+
+            # Formatar valores
+            for col_r in ["Pago (R$)","Em aberto (R$)","Total mês"]:
+                pivot_show[col_r] = pivot_show[col_r].apply(money)
+
+            st.dataframe(pivot_show, use_container_width=True, hide_index=True)
+
+            # Gráfico barras empilhadas pago x aberto
+            fig = px.bar(
+                pivot, x="Mês", y=["Pago (R$)","Em aberto (R$)"],
+                barmode="stack",
+                title="Parcelas por mês — Pago vs Em aberto",
+                color_discrete_map={"Pago (R$)":"#00CC96","Em aberto (R$)":"#EF553B"},
+                labels={"value":"R$","variable":"Status"},
+            )
+            fig.update_xaxes(tickangle=-30)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ── ABA: DETALHES POR DESPESA
+    with tab_detalhe:
+        if not has_inst:
+            st.info("Nenhuma parcela cadastrada.")
+        else:
+            st.subheader("Progresso por despesa")
+
+            if c_eid and c_itot and c_inum:
+                grupos = df_inst.groupby([c_eid, "_descricao"])
+                for (eid, desc), grp in grupos:
+                    pagas   = grp[grp[c_paid] == True]
+                    abertas = grp[grp[c_paid] == False]
+                    total_p = pagas[c_ival].sum()
+                    total_a = abertas[c_ival].sum()
+                    n_pagas = len(pagas)
+                    n_total = grp[c_itot].iloc[0] if c_itot else len(grp)
+                    prox    = abertas.sort_values(c_due).iloc[0] if not abertas.empty else None
+
+                    with st.expander(
+                        f"{'✅' if abertas.empty else '⏳'} **{desc}** — "
+                        f"{n_pagas}/{n_total} pagas — "
+                        f"Aberto: {money(total_a)}", expanded=not abertas.empty):
+
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Pagas",    f"{n_pagas}/{n_total}", money(total_p))
+                        c2.metric("Em aberto", money(total_a))
+                        if prox is not None:
+                            c3.metric("Próximo vencimento",
+                                      f"{MESES_PT[prox[c_due].month]} {prox[c_due].year}",
+                                      money(prox[c_ival]))
+
+                        # Tabela de parcelas
+                        cols_show = [c for c in [c_inum, "_mes_label", c_ival, c_paid] if c]
+                        rename = {c_inum:"Parcela", "_mes_label":"Mês",
+                                  c_ival:"Valor (R$)", c_paid:"Pago"}
+                        sub = grp[cols_show].rename(columns=rename).sort_values("Parcela")
+                        sub["Valor (R$)"] = sub["Valor (R$)"].apply(money)
+                        sub["Pago"] = sub["Pago"].map({True:"✅ Sim", False:"⏳ Não"})
+                        st.dataframe(sub, use_container_width=True, hide_index=True)
+
+                        # Marcar como paga
+                        if not abertas.empty:
+                            with st.form(f"pagar_{eid}"):
+                                inst_id = st.text_input("ID da parcela para marcar como paga",
+                                                        key=f"inp_{eid}")
+                                if st.form_submit_button("✅ Marcar paga"):
+                                    try:
+                                        supabase.table(TB_PARCELAS).update({c_paid: True}).eq("id", inst_id.strip()).execute()
+                                        st.success("Marcada como paga.")
+                                        refresh()
+                                    except Exception as e:
+                                        st.error(f"Erro: {e}")
+            else:
+                st.dataframe(df_inst, use_container_width=True)
 
 # ════════════════════════════════════════════════════════════════════
 # GERENCIAR (EXCLUIR)
