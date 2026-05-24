@@ -183,14 +183,16 @@ if page == "📊 Visão geral":
 
     saldo = total_entrada - total_saida
 
+    label_parcelas = f"💳 Parcelas ({sel if sel != 'Todos' else 'selecione mês'})"
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("💵 Entradas",       money(total_entrada))
-    k2.metric("💸 Fixas/Variáveis",money(saida_simples))
-    k3.metric("💳 Parcelas mês",   money(saida_parcelas))
-    k4.metric("💰 Saldo",          money(saldo),
-              delta=("positivo" if saldo >= 0 else "negativo"),
+    k1.metric("💵 Entradas",        money(total_entrada))
+    k2.metric("💸 Fixas/Variáveis", money(saida_simples))
+    k3.metric(label_parcelas,       money(saida_parcelas) if sel != "Todos" else "—",
+              help="Filtre um mês específico para ver parcelas do mês")
+    k4.metric("💰 Saldo",           money(saldo) if sel != "Todos" else "—",
+              delta=("positivo" if saldo >= 0 else "negativo") if sel != "Todos" else None,
               delta_color="normal" if saldo >= 0 else "inverse")
-    k5.metric("🕍 Obrigações",     money(obg_val),
+    k5.metric("🕍 Obrigações",      money(obg_val),
               help="Primícias + Maaser + Tzedaká")
 
     st.divider()
@@ -215,10 +217,19 @@ if page == "📊 Visão geral":
     c1, c2 = st.columns(2)
     if has_exp and not dv.empty:
         with c1:
-            st.subheader("Últimas despesas")
+            st.subheader("💸 Despesas Fixas e Variáveis")
             show = [x for x in [c_date, c_desc, c_type, c_val] if x]
-            st.dataframe(dv[show].sort_values(c_date, ascending=False).head(15),
-                         use_container_width=True)
+            tbl  = dv[show].sort_values(c_date, ascending=False).head(15).copy()
+            # Renomear colunas para português
+            rename_map = {c_date:"Data", c_desc:"Descrição", c_type:"Tipo", c_val:"Valor (R$)"}
+            tbl.rename(columns={k: v for k, v in rename_map.items() if k in tbl.columns}, inplace=True)
+            if "Data" in tbl.columns:
+                tbl["Data"] = pd.to_datetime(tbl["Data"]).dt.strftime("%d/%m/%Y")
+            if "Valor (R$)" in tbl.columns:
+                tbl["Valor (R$)"] = tbl["Valor (R$)"].apply(money)
+            if "Tipo" in tbl.columns:
+                tbl["Tipo"] = tbl["Tipo"].map({"Fixa":"🔒 Fixa","Variavel":"📦 Variável","Variável":"📦 Variável"}).fillna(tbl["Tipo"])
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
     if has_inc and not di.empty:
         with c2:
             st.subheader("Entradas")
@@ -240,7 +251,16 @@ if page == "📊 Visão geral":
                 st.divider()
                 st.subheader(f"💳 Parcelas em aberto {'' if sel == 'Todos' else sel}")
                 st.metric("Total parcelas", money(pend[c_ival].sum()))
-                st.dataframe(pend.sort_values(c_due), use_container_width=True)
+                tbl_p = pend[[c for c in [c_due, "_descricao", c_ival, c_paid] if c and c in pend.columns]].copy()
+                tbl_p.rename(columns={c_due:"Vencimento", "_descricao":"Despesa",
+                                       c_ival:"Valor (R$)", c_paid:"Pago"}, inplace=True)
+                if "Vencimento" in tbl_p.columns:
+                    tbl_p["Vencimento"] = pd.to_datetime(tbl_p["Vencimento"]).dt.strftime("%d/%m/%Y")
+                if "Valor (R$)" in tbl_p.columns:
+                    tbl_p["Valor (R$)"] = tbl_p["Valor (R$)"].apply(money)
+                if "Pago" in tbl_p.columns:
+                    tbl_p["Pago"] = tbl_p["Pago"].map({True:"✅","False":"⏳",False:"⏳"})
+                st.dataframe(tbl_p.sort_values("Vencimento"), use_container_width=True, hide_index=True)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -465,7 +485,7 @@ elif page == "💳 Despesa parcelada":
     pay_opts = df_pays[name_col(df_pays)].tolist() if not df_pays.empty else []
     acc_opts = df_accs[name_col(df_accs)].tolist() if not df_accs.empty else []
 
-    tab_novo, tab_resumo, tab_detalhe = st.tabs(["➕ Nova parcelada", "📊 Resumo por mês", "📋 Detalhes"])
+    tab_novo, tab_detalhe = st.tabs(["➕ Nova parcelada", "📋 Detalhes por despesa"])
 
     # ── ABA: NOVA PARCELADA
     with tab_novo:
@@ -565,56 +585,6 @@ elif page == "💳 Despesa parcelada":
         else:
             df_inst["_descricao"] = "—"
 
-    # ── ABA: RESUMO POR MÊS
-    with tab_resumo:
-        if not has_inst:
-            st.info("Nenhuma parcela cadastrada ainda.")
-        else:
-            st.subheader("Resumo mensal de parcelas")
-
-            # Totais globais
-            total_pago   = df_inst[df_inst[c_paid] == True][c_ival].sum()
-            total_aberto = df_inst[df_inst[c_paid] == False][c_ival].sum()
-            k1, k2, k3 = st.columns(3)
-            k1.metric("✅ Total já pago",     money(total_pago))
-            k2.metric("⏳ Total em aberto",   money(total_aberto))
-            k3.metric("📦 Total comprometido",money(total_pago + total_aberto))
-
-            st.divider()
-
-            # Tabela por mês — pago x em aberto
-            resumo = df_inst.groupby(["_mes_label","_ym",c_paid])[c_ival].sum().reset_index()
-            resumo.columns = ["Mês","_ym","Pago","Valor"]
-            pivot = resumo.pivot_table(index=["Mês","_ym"], columns="Pago",
-                                       values="Valor", aggfunc="sum").reset_index()
-            pivot.columns.name = None
-            pivot = pivot.rename(columns={False:"Em aberto (R$)", True:"Pago (R$)"})
-            pivot = pivot.sort_values("_ym")
-            for col_r in ["Em aberto (R$)","Pago (R$)"]:
-                if col_r not in pivot.columns:
-                    pivot[col_r] = 0.0
-            pivot["Em aberto (R$)"] = pivot["Em aberto (R$)"].fillna(0)
-            pivot["Pago (R$)"]      = pivot["Pago (R$)"].fillna(0)
-            pivot["Total mês"]      = pivot["Em aberto (R$)"] + pivot["Pago (R$)"]
-            pivot_show = pivot[["Mês","Pago (R$)","Em aberto (R$)","Total mês"]].copy()
-
-            # Formatar valores
-            for col_r in ["Pago (R$)","Em aberto (R$)","Total mês"]:
-                pivot_show[col_r] = pivot_show[col_r].apply(money)
-
-            st.dataframe(pivot_show, use_container_width=True, hide_index=True)
-
-            # Gráfico barras empilhadas pago x aberto
-            fig = px.bar(
-                pivot, x="Mês", y=["Pago (R$)","Em aberto (R$)"],
-                barmode="stack",
-                title="Parcelas por mês — Pago vs Em aberto",
-                color_discrete_map={"Pago (R$)":"#00CC96","Em aberto (R$)":"#EF553B"},
-                labels={"value":"R$","variable":"Status"},
-            )
-            fig.update_xaxes(tickangle=-30)
-            st.plotly_chart(fig, use_container_width=True)
-
     # ── ABA: DETALHES POR DESPESA
     with tab_detalhe:
         if not has_inst:
@@ -652,7 +622,8 @@ elif page == "💳 Despesa parcelada":
                                   c_ival:"Valor (R$)", c_paid:"Pago"}
                         sub = grp[cols_show].rename(columns=rename).sort_values("Parcela")
                         sub["Valor (R$)"] = sub["Valor (R$)"].apply(money)
-                        sub["Pago"] = sub["Pago"].map({True:"✅ Sim", False:"⏳ Não"})
+                        sub["Pago"]       = sub["Pago"].map({True:"✅ Pago", False:"⏳ Em aberto"})
+                        sub["Mês"]        = sub["Mês"]  # já em português
                         st.dataframe(sub, use_container_width=True, hide_index=True)
 
                         # Marcar como paga
