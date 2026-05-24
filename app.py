@@ -387,7 +387,7 @@ elif page == "➕ Despesa simples":
         description   = r1.text_input("Descrição *  (ex: Energia Elétrica Maio/26)")
         expense_date  = r2.date_input("Data de vencimento / pagamento", value=date.today(),
                                        help="Data em que vence ou foi pago")
-        expense_type  = r3.selectbox("Tipo", ["Fixa", "Variável"])
+        expense_type  = r3.selectbox("Tipo", ["Fixa", "Variavel"])
 
         r4, r5, r6 = st.columns(3)
         category_name = r4.selectbox("Categoria",          cat_opts or ["Sem cadastro"])
