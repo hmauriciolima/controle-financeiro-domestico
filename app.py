@@ -237,6 +237,53 @@ if page == "📊 Visão geral":
             st.dataframe(di[show_i].sort_values(ci_pay, ascending=False).head(15)
                          if ci_pay else di[show_i], use_container_width=True)
 
+    # ── Parcelas que se encerram nos próximos 3 meses
+    if not df_inst.empty and c_due_v and c_ival_v and c_paid_v:
+        st.divider()
+        st.subheader("🔚 Parcelas encerrando em breve")
+        st.caption("Despesas que terminam nos próximos 3 meses → valor que ficará livre no orçamento")
+
+        hoje      = pd.Timestamp.today().normalize()
+        limite    = hoje + pd.DateOffset(months=3)
+
+        # Última parcela de cada despesa
+        df_aberto = df_inst[df_inst[c_paid_v] == False].copy()
+        if not df_aberto.empty:
+            df_aberto[c_due_v] = pd.to_datetime(df_aberto[c_due_v])
+            # Para cada expense_id: última parcela em aberto
+            ultima = df_aberto.groupby("_descricao")[c_due_v].max().reset_index()
+            ultima.columns = ["Despesa", "Último vencimento"]
+            # Filtrar só as que encerram nos próximos 3 meses
+            encerrando = ultima[
+                (ultima["Último vencimento"] >= hoje) &
+                (ultima["Último vencimento"] <= limite)
+            ].copy()
+
+            if encerrando.empty:
+                st.info("Nenhuma parcela se encerra nos próximos 3 meses.")
+            else:
+                # Juntar valor da parcela e quantas restam
+                val_map   = df_aberto.groupby("_descricao")[c_ival_v].first()
+                count_map = df_aberto.groupby("_descricao")[c_ival_v].count()
+                encerrando["Valor/parcela"] = encerrando["Despesa"].map(val_map).apply(money)
+                encerrando["Parcelas restantes"] = encerrando["Despesa"].map(count_map)
+                encerrando["💰 Libera/mês após"] = encerrando["Despesa"].map(val_map).apply(
+                    lambda v: money(v))
+                encerrando["Último vencimento"] = encerrando["Último vencimento"].dt.strftime("%m/%Y")
+
+                # KPI total que vai liberar
+                total_lib = encerrando["Despesa"].map(val_map).sum()
+                st.metric("💡 Total que vai liberar por mês", money(total_lib),
+                          help="Soma das parcelas mensais que encerram em até 3 meses")
+
+                st.dataframe(
+                    encerrando[["Despesa","Último vencimento","Parcelas restantes",
+                                "Valor/parcela","💰 Libera/mês após"]],
+                    use_container_width=True, hide_index=True
+                )
+        else:
+            st.success("✅ Todas as parcelas estão pagas!")
+
     # Parcelas do mês selecionado
     if not df_inst.empty:
         c_due  = fc(df_inst, "due_month", "vencimento", "due_date")
@@ -591,6 +638,21 @@ elif page == "💳 Despesa parcelada":
             st.info("Nenhuma parcela cadastrada.")
         else:
             st.subheader("Progresso por despesa")
+
+            # Alerta de encerramento
+            hoje_d  = pd.Timestamp.today().normalize()
+            lim3    = hoje_d + pd.DateOffset(months=3)
+            df_ab   = df_inst[df_inst[c_paid] == False].copy() if c_paid else df_inst.copy()
+            if not df_ab.empty:
+                ult  = df_ab.groupby("_descricao")[c_due].max()
+                enc  = ult[(ult >= hoje_d) & (ult <= lim3)]
+                if not enc.empty:
+                    val_enc = df_ab[df_ab["_descricao"].isin(enc.index)].groupby("_descricao")[c_ival].first().sum()
+                    st.success(
+                        f"🔚 **{len(enc)} despesa(s) se encerram nos próximos 3 meses** — "
+                        f"vai liberar **{money(val_enc)}/mês** no orçamento: "
+                        + ", ".join([f"**{d}** ({v.strftime('%m/%Y')})" for d, v in enc.items()])
+                    )
 
             if c_eid and c_itot and c_inum:
                 grupos = df_inst.groupby([c_eid, "_descricao"])
