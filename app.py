@@ -238,6 +238,16 @@ if page == "📊 Visão geral":
                          if ci_pay else di[show_i], use_container_width=True)
 
     # ── Parcelas que se encerram nos próximos 3 meses
+    # Montar coluna _descricao no df_inst para a visão geral
+    if not df_inst.empty:
+        c_eid_v   = fc(df_inst, "expense_id", "despesa_id")
+        c_exp_dv  = fc(df_exp,  "description", "descricao", "nome")
+        if c_eid_v and c_exp_dv and not df_exp.empty:
+            desc_map_v = df_exp.set_index("id")[c_exp_dv].to_dict()
+            df_inst["_descricao"] = df_inst[c_eid_v].map(desc_map_v).fillna("—")
+        else:
+            df_inst["_descricao"] = "—"
+
     if not df_inst.empty and c_due_v and c_ival_v and c_paid_v:
         st.divider()
         st.subheader("🔚 Parcelas encerrando em breve")
