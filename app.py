@@ -125,10 +125,26 @@ if page == "📊 Visão geral":
     has_exp = not df_exp.empty and c_date and c_val
     has_inc = not df_inc.empty and ci_val
 
+    # Preparar parcelas para usar no lugar do valor total de parceladas
+    c_due_v  = fc(df_inst, "due_month", "vencimento", "due_date")
+    c_ival_v = fc(df_inst, "installment_value", "valor_parcela", "value")
+    c_paid_v = fc(df_inst, "paid", "pago")
+    has_inst = not df_inst.empty and c_due_v and c_ival_v
+
     if has_exp:
         df_exp[c_date]   = pd.to_datetime(df_exp[c_date])
         df_exp["_month"] = df_exp[c_date].dt.to_period("M").astype(str)
         df_exp[c_val]    = df_exp[c_val].astype(float)
+        # Separar fixas/variáveis das parceladas
+        if c_type:
+            df_simples   = df_exp[df_exp[c_type] != "Parcelada"].copy()
+        else:
+            df_simples   = df_exp.copy()
+
+    if has_inst:
+        df_inst[c_due_v]  = pd.to_datetime(df_inst[c_due_v])
+        df_inst["_month"] = df_inst[c_due_v].dt.to_period("M").astype(str)
+        df_inst[c_ival_v] = df_inst[c_ival_v].astype(float)
 
     if has_inc and ci_pay:
         df_inc[ci_pay]    = pd.to_datetime(df_inc[ci_pay])
@@ -136,16 +152,28 @@ if page == "📊 Visão geral":
         df_inc[ci_val]    = df_inc[ci_val].astype(float)
 
     all_months = set()
-    if has_exp: all_months |= set(df_exp["_month"].unique())
+    if has_exp:  all_months |= set(df_exp["_month"].unique())
+    if has_inst: all_months |= set(df_inst["_month"].unique())
     if has_inc and "_month" in df_inc.columns: all_months |= set(df_inc["_month"].unique())
     months = sorted(all_months, reverse=True)
 
-    sel = st.selectbox("Filtrar mês", ["Todos"] + months)
-    dv = (df_exp if sel == "Todos" else df_exp[df_exp["_month"] == sel]) if has_exp else pd.DataFrame()
+    MESES_PT = {1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",
+                7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"}
+
+    sel = st.selectbox("Filtrar mês", ["Todos"] + months,
+                       format_func=lambda x: x if x == "Todos" else
+                       f"{MESES_PT[int(x.split('-')[1])]} {x.split('-')[0]}")
+
+    # Despesas simples (Fixa + Variável) no mês
+    dv = (df_simples if sel == "Todos" else df_simples[df_simples["_month"] == sel]) if has_exp else pd.DataFrame()
+    # Parcelas do mês
+    dp = (df_inst if sel == "Todos" else df_inst[df_inst["_month"] == sel]) if has_inst else pd.DataFrame()
     di = (df_inc if sel == "Todos" else df_inc[df_inc["_month"] == sel]) if (has_inc and "_month" in df_inc.columns) else df_inc if has_inc else pd.DataFrame()
 
-    total_saida   = dv[c_val].sum()  if has_exp and not dv.empty else 0
-    total_entrada = di[ci_val].sum() if has_inc and not di.empty else 0
+    saida_simples  = dv[c_val].sum()    if has_exp  and not dv.empty else 0
+    saida_parcelas = dp[c_ival_v].sum() if has_inst and not dp.empty else 0
+    total_saida    = saida_simples + saida_parcelas
+    total_entrada  = di[ci_val].sum()   if has_inc  and not di.empty else 0
 
     # Separar obrigações religiosas das demais entradas
     sal_val = obg_val = 0
@@ -155,13 +183,14 @@ if page == "📊 Visão geral":
 
     saldo = total_entrada - total_saida
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("💵 Entradas",  money(total_entrada))
-    k2.metric("💸 Saídas",    money(total_saida))
-    k3.metric("💰 Saldo",     money(saldo),
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("💵 Entradas",       money(total_entrada))
+    k2.metric("💸 Fixas/Variáveis",money(saida_simples))
+    k3.metric("💳 Parcelas mês",   money(saida_parcelas))
+    k4.metric("💰 Saldo",          money(saldo),
               delta=("positivo" if saldo >= 0 else "negativo"),
               delta_color="normal" if saldo >= 0 else "inverse")
-    k4.metric("🕍 Obrigações", money(obg_val),
+    k5.metric("🕍 Obrigações",     money(obg_val),
               help="Primícias + Maaser + Tzedaká")
 
     st.divider()
